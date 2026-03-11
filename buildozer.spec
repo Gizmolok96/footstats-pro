@@ -3,38 +3,34 @@ title = SStats Football Analytics
 package.name = sstats
 package.domain = org.gizmolok
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,ttf,woff,woff2,json,csv,txt,xml
-source.include_patterns = assets/*,data/*,images/*,fonts/*
-source.exclude_exts = spec,log,gitignore
-source.exclude_dirs = tests,bin,venv,.git,.github,__pycache__,.buildozer
+source.include_exts = py,png,jpg,kv,atlas,ttf,woff,woff2,json,csv,txt,xml,so,dll
+source.include_patterns = assets/*,data/*,images/*,fonts/*,src/*
+source.exclude_dirs = tests, bin, venv, .git, .github, __pycache__, .buildozer, build, dist
+
 version = 10.2.0
 
-# ИСПРАВЛЕНО: Убран deprecated android.sdk, используем только android.api
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,pillow,numpy,pandas,requests,urllib3,certifi,charset-normalizer,idna,python-dateutil,pytz,six,scipy
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,pillow,numpy,pandas,requests,scikit-learn,scipy,urllib3,certifi,charset-normalizer,idna,joblib,threadpoolctl,python-dateutil,pytz,six,android,pyjnius
 
 orientation = portrait
 fullscreen = 0
-android.permissions = INTERNET,ACCESS_NETWORK_STATE
 
-# API levels (android.sdk удален — он deprecated)
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
+
+# УБРАНО: android.sdk (deprecated)
+# Используем только android.api
 android.api = 33
 android.minapi = 21
-android.ndk = 25b
 android.ndk_api = 21
 
-# Дополнительные настройки Android
 android.private_storage = True
-android.skip_update = False
-android.debug_artifact = apk
 android.allow_backup = True
+android.arch = armeabi-v7a,arm64-v8a
 
-# Размеры памяти для сборки (важно для GitHub Actions)
-android.gradle_options = org.gradle.jvmargs=-Xmx4096m
-android.add_gradle_repositories = mavenCentral(),google()
+# Явно указываем пути (опционально, Buildozer должен найти автоматически)
+# android.sdk_path = ~/.buildozer/android/platform/android-sdk
+# android.ndk_path = ~/.buildozer/android/platform/android-ndk-r25b
 
-# Иконки и пресплэш (если есть)
-# android.presplash = 
-# android.icon = 
+p4a.bootstrap = sdl2
 
 [buildozer]
 log_level = 2
