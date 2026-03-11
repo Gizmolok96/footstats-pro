@@ -1,87 +1,123 @@
 name: Build Android APK
 
-on: [push, pull_request]
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          python3-pip build-essential git \
-          ffmpeg libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-          libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
-          zlib1g-dev libgstreamer1.0 gstreamer1.0-plugins-base \
-          gstreamer1.0-plugins-good libffi-dev libssl-dev
-    
-    - name: Install buildozer
-      run: |
-        pip install --upgrade buildozer cython
-    
-    # ❌ УБРАН КЭШ - он испорчен и содержит нерабочий SDK
-    # - name: Cache SDK/NDK
-    #   uses: actions/cache@v4
-    #   ...
-    
-    - name: Clean broken SDK (if exists)
-      run: |
-        # Удаляем только SDK, оставляем NDK (он тяжёлый и рабочий)
-        rm -rf ~/.buildozer/android/platform/android-sdk
-        rm -rf ~/.android
-        rm -rf .buildozer/android/platform
-    
-    - name: Pre-create license files
-      run: |
-        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-        mkdir -p ~/.android
-        
-        # ВСЕ хэши лицензий
-        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-        echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
-        echo "504667f4c0de7af1a06de9f4b1727b84351f2910" > ~/.buildozer/android/platform/android-sdk/licenses/android-googletv-license
-        echo "33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbt-license
-        
-        echo "=== License files created ==="
-        ls -la ~/.buildozer/android/platform/android-sdk/licenses/
-    
-    - name: Build APK
-      run: |
-        export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
-        # Принимаем лицензии интерактивно
-        yes | buildozer android debug 2>&1 | tee build.log
-      timeout-minutes: 120
-    
-    - name: Debug on failure
-      if: failure()
-      run: |
-        echo "=== LAST 500 LINES ==="
-        tail -n 500 build.log || true
-        echo ""
-        echo "=== SDK DIRECTORY ==="
-        ls -la ~/.buildozer/android/platform/android-sdk/ 2>/dev/null || true
-        echo ""
-        echo "=== CHECK SDKMANAGER ==="
-        find ~/.buildozer -name "sdkmanager" 2>/dev/null || echo "sdkmanager not found"
-    
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      if: success()
-      with:
-        name: sstats-apk
-        path: bin/*.apk
-        if-no-files-found: error
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            build-essential \
+            git \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            libfreetype6-dev \
+            libgl1-mesa-dev \
+            libgles2-mesa-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            zlib1g-dev \
+            libffi-dev \
+            libssl-dev \
+            automake \
+            autoconf \
+            libtool \
+            pkg-config \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libltdl-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython virtualenv
+
+      - name: Setup Android SDK properly
+        run: |
+          # Создаем структуру директорий
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          
+          # Скачиваем command line tools (версия 11076708 — последняя стабильная)
+          cd ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest
+          
+          # Устанавливаем переменные окружения
+          echo "ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          
+          # Принимаем лицензии
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+
+      - name: Pre-install Android SDK components
+        run: |
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+
+      - name: Cache Buildozer dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.gradle
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      - name: Build APK with Buildozer
+        run: |
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          buildozer android debug
+        timeout-minutes: 45
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-apk
+          path: |
+            bin/*.apk
+            bin/*.aab
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Debug build directory (on failure)
+        if: failure()
+        run: |
+          echo "=== Buildozer directory contents ==="
+          ls -la .buildozer/android/app/ 2>/dev/null || echo "No .buildozer/android/app/"
+          echo "=== Bin directory contents ==="
+          ls -la bin/ 2>/dev/null || echo "No bin/"
+          echo "=== Full buildozer log ==="
+          cat .buildozer/android/platform/build-*/build.log 2>/dev/null || echo "No build log found"
