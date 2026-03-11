@@ -31,43 +31,40 @@ jobs:
       run: |
         pip install --upgrade buildozer cython
     
-    - name: Cache SDK/NDK
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.buildozer
-          ~/.android
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          ${{ runner.os }}-buildozer-
+    # ❌ УБРАН КЭШ - он испорчен и содержит нерабочий SDK
+    # - name: Cache SDK/NDK
+    #   uses: actions/cache@v4
+    #   ...
     
-    - name: Accept Android licenses (CRITICAL FIX)
+    - name: Clean broken SDK (if exists)
       run: |
-        # Создаём все директории заранее
-        mkdir -p ~/.android
+        # Удаляем только SDK, оставляем NDK (он тяжёлый и рабочий)
+        rm -rf ~/.buildozer/android/platform/android-sdk
+        rm -rf ~/.android
+        rm -rf .buildozer/android/platform
+    
+    - name: Pre-create license files
+      run: |
         mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        mkdir -p ~/.android
         
-        # ВСЕ хэши лицензий (обновлённые)
+        # ВСЕ хэши лицензий
         echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
         echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
         echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
         echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
-        
-        # Дополнительные лицензии
         echo "504667f4c0de7af1a06de9f4b1727b84351f2910" > ~/.buildozer/android/platform/android-sdk/licenses/android-googletv-license
         echo "33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbt-license
         
-        # Проверяем
         echo "=== License files created ==="
         ls -la ~/.buildozer/android/platform/android-sdk/licenses/
-        cat ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
     
     - name: Build APK
       run: |
         export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
-        # Принимаем лицензии интерактивно через yes
+        # Принимаем лицензии интерактивно
         yes | buildozer android debug 2>&1 | tee build.log
-      timeout-minutes: 90
+      timeout-minutes: 120
     
     - name: Debug on failure
       if: failure()
@@ -78,8 +75,8 @@ jobs:
         echo "=== SDK DIRECTORY ==="
         ls -la ~/.buildozer/android/platform/android-sdk/ 2>/dev/null || true
         echo ""
-        echo "=== LICENSES ==="
-        ls -la ~/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
+        echo "=== CHECK SDKMANAGER ==="
+        find ~/.buildozer -name "sdkmanager" 2>/dev/null || echo "sdkmanager not found"
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -87,4 +84,4 @@ jobs:
       with:
         name: sstats-apk
         path: bin/*.apk
-        if-no-files-found: warn
+        if-no-files-found: error
