@@ -1,79 +1,54 @@
 name: Build Android APK
 
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
     
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          git zip unzip openjdk-17-jdk \
-          autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev \
-          cmake libffi-dev libssl-dev \
-          automake
-    
-    - name: Install buildozer
-      run: |
-        pip install --upgrade pip
+        sudo apt-get install -y python3-pip build-essential git ffmpeg libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev zlib1g-dev libgstreamer1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good
         pip install buildozer cython
     
-    - name: Check project files
-      run: |
-        echo "=== Проверка файлов ==="
-        ls -la
-        echo "=== Проверка main.py ==="
-        head -5 main.py
-        echo "=== Проверка buildozer.spec ==="
-        head -20 buildozer.spec
-    
-    - name: Cache Android SDK
+    - name: Cache SDK/NDK
       uses: actions/cache@v4
       with:
         path: |
-          ~/.buildozer/android/platform
-        key: ${{ runner.os }}-android-sdk-${{ hashFiles('buildozer.spec') }}
+          ~/.buildozer
+          ~/.android
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          ${{ runner.os }}-android-sdk-
+          ${{ runner.os }}-buildozer-
+    
+    - name: Accept Android licenses
+      run: |
+        mkdir -p ~/.android
+        # Создаём файл с лицензиями заранее
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.android/repositories.cfg
+        # Генерируем accepted licenses
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
     
     - name: Build APK
       run: |
-        export BUILDOZER_WARN_ON_ROOT=0
-        buildozer -v android debug 2>&1 | tee build.log
-      timeout-minutes: 300
-    
-    - name: Check build results
-      if: always()
-      run: |
-        echo "=== Проверка результатов ==="
-        ls -la bin/ 2>/dev/null || echo "Папка bin не найдена"
-        find . -name "*.apk" 2>/dev/null || echo "APK не найден"
-        echo "=== Последние 50 строк лога ==="
-        tail -50 build.log 2>/dev/null || echo "Лог не найден"
+        # Принимаем лицензии интерактивно через yes
+        yes | buildozer android debug 2>&1 | tee build.log || (cat build.log && exit 1)
+      timeout-minutes: 60
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: sstats-apk
-        path: |
-          bin/*.apk
-          build.log
-        retention-days: 30
-        if-no-files-found: warn
+        path: bin/*.apk
