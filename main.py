@@ -16,6 +16,9 @@ elif 'ANDROID_STORAGE' in os.environ:
     # Android-specific paths
     os.environ['KIVY_HOME'] = os.path.join(os.environ['ANDROID_STORAGE'], 'sstats')
 
+# Добавляем текущую директорию в путь для импортов src
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from src.app import SStatsApp
 
 if __name__ == '__main__':
