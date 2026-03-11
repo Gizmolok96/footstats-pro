@@ -1,0 +1,81 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4  # Обновлено до v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v5  # Обновлено до v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git zip unzip openjdk-17-jdk \
+          autoconf libtool pkg-config \
+          zlib1g-dev libncurses5-dev \
+          cmake libffi-dev libssl-dev \
+          automake
+    
+    - name: Install buildozer
+      run: |
+        pip install --upgrade pip
+        pip install buildozer cython
+    
+    - name: Cache Android SDK
+      uses: actions/cache@v4  # Обновлено до v4
+      with:
+        path: |
+          ~/.buildozer/android/platform
+        key: ${{ runner.os }}-android-sdk-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-android-sdk-
+    
+    - name: Build APK
+      run: |
+        export BUILDOZER_WARN_ON_ROOT=0
+        buildozer -v android debug
+      timeout-minutes: 300
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4  # ✅ Исправлено на v4
+      if: always()
+      with:
+        name: sstats-apk
+        path: bin/*.apk
+        retention-days: 30
+        overwrite: true  # Новый параметр для v4
+    
+    - name: Create Release
+      if: github.ref == 'refs/heads/main' && success()
+      uses: softprops/action-gh-release@v1
+      with:
+        files: bin/*.apk
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        body: |
+          Автоматическая сборка SStats Football Analytics
+          
+          **Изменения:**
+          - Сборка ${{ github.sha }}
+          
+          **Установка:**
+          1. Скачайте APK
+          2. Разрешите установку из неизвестных источников
+          3. Установите на Android
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
