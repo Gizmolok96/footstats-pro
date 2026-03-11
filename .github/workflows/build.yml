@@ -1,0 +1,162 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            build-essential \
+            git \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            libfreetype6-dev \
+            libgl1-mesa-dev \
+            libgles2-mesa-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            zlib1g-dev \
+            libffi-dev \
+            libssl-dev \
+            automake \
+            autoconf \
+            libtool \
+            pkg-config \
+            zip \
+            unzip \
+            ccache
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-android-build
+          max-size: 2G
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython virtualenv
+
+      - name: Setup Android SDK properly
+        run: |
+          # Очищаем старые попытки
+          rm -rf ~/.buildozer/android/platform/android-sdk
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          
+          # Скачиваем command line tools
+          cd ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest
+          
+          # Устанавливаем переменные окружения
+          echo "ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          
+          # Принимаем лицензии
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+
+      - name: Pre-install Android SDK components
+        run: |
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          
+          # Устанавливаем все необходимые компоненты
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          
+          # Устанавливаем platform-tools, platforms и build-tools
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+          
+          # Устанавливаем NDK отдельно (новый формат)
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "ndk;25.2.9519653"
+
+      - name: Cache Buildozer dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.gradle
+            ~/.ccache
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      - name: Verify project structure
+        run: |
+          echo "=== Project structure ==="
+          ls -la
+          echo "=== Checking buildozer.spec ==="
+          test -f buildozer.spec && echo "✓ buildozer.spec exists" || echo "✗ buildozer.spec NOT FOUND!"
+          echo "=== Checking main.py ==="
+          test -f main.py && echo "✓ main.py exists" || echo "✗ main.py NOT FOUND!"
+          echo "=== Checking src/ ==="
+          ls -la src/ 2>/dev/null || echo "src/ directory not found"
+
+      - name: Build APK with Buildozer
+        run: |
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+          export USE_CCACHE=1
+          export CCACHE_MAXSIZE=2G
+          
+          # Увеличиваем таймаут и логируем всё
+          buildozer android debug 2>&1 | tee buildozer.log
+        timeout-minutes: 90
+        continue-on-error: true
+
+      - name: Check build result
+        run: |
+          echo "=== Checking for APK ==="
+          ls -la bin/ 2>/dev/null || echo "No bin/ directory"
+          find . -name "*.apk" -type f 2>/dev/null | head -5
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-apk-${{ github.run_id }}
+          path: |
+            bin/*.apk
+            bin/*.aab
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload build logs on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: |
+            buildozer.log
+            .buildozer/android/platform/build-*/build.log
+          if-no-files-found: ignore
+          retention-days: 3
