@@ -11,9 +11,10 @@ fullscreen = 0
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 android.api = 33
 android.minapi = 21
-android.sdk = 33
+# УБРАНО: android.sdk (deprecated)
+# УБРАНО: android.arch (устарело)
 android.ndk = 25b
-android.arch = arm64-v8a
+android.archs = arm64-v8a  # ← Исправлено с android.arch
 android.gradle_dependencies = com.google.android.material:material:1.9.0
 
 [buildozer]
