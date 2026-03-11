@@ -1,0 +1,132 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            build-essential \
+            git \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            libfreetype6-dev \
+            libgl1-mesa-dev \
+            libgles2-mesa-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            zlib1g-dev \
+            libffi-dev \
+            libssl-dev \
+            automake \
+            autoconf \
+            libtool \
+            pkg-config \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libltdl-dev \
+            zip \
+            unzip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython virtualenv
+
+      - name: Setup Android SDK with cmdline-tools
+        run: |
+          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDK_DIR/cmdline-tools"
+          
+          # Скачиваем command line tools (версия 11076708)
+          cd "$SDK_DIR/cmdline-tools"
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest
+          
+          # Устанавливаем переменные окружения
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
+          echo "$SDK_DIR/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$SDK_DIR/platform-tools" >> $GITHUB_PATH
+          
+          # Принимаем лицензии и устанавливаем необходимые компоненты
+          export PATH="$SDK_DIR/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest"
+
+      - name: Create sdkmanager wrapper for buildozer
+        run: |
+          # Buildozer ищет sdkmanager в старом пути, создадим symlink
+          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDK_DIR/tools/bin"
+          cat > "$SDK_DIR/tools/bin/sdkmanager" << 'EOF'
+          #!/bin/bash
+          # Wrapper for sdkmanager in cmdline-tools
+          exec "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$@"
+          EOF
+          chmod +x "$SDK_DIR/tools/bin/sdkmanager"
+
+      - name: Cache Buildozer dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.gradle
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      - name: Build APK with Buildozer
+        run: |
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+          buildozer android debug
+        timeout-minutes: 60
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-apk
+          path: |
+            bin/*.apk
+            bin/*.aab
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          echo "=== SDK Directory structure ==="
+          find ~/.buildozer/android/platform/android-sdk -type f -name "sdkmanager*" 2>/dev/null || echo "No sdkmanager found"
+          echo "=== Buildozer log ==="
+          cat .buildozer/android/platform/build-*/build.log 2>/dev/null || echo "No build log"
+          echo "=== Bin directory ==="
+          ls -la bin/ 2>/dev/null || echo "No bin directory"
